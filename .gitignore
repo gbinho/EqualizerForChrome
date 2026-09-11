@@ -1,0 +1,13 @@
+# Sistema
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Pacotes gerados. A chave .pem assina a extensão e nunca deve ir para o repositório.
+*.zip
+*.crx
+*.pem
+
+# Ferramentas locais
+.claude/
+.impeccable/

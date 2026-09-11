@@ -1,0 +1,104 @@
+// Service worker: liga e desliga a captura das abas e mantém o selo "EQ" no ícone.
+importScripts('eq.js');
+
+const OFFSCREEN_URL = 'offscreen.html';
+
+chrome.action.setBadgeBackgroundColor({ color: '#ff6a1a' });
+chrome.action.setBadgeTextColor?.({ color: '#ffffff' });
+
+// Criar e fechar o documento invisível acontece em fila, para um pedido não atropelar o outro.
+let queue = Promise.resolve();
+function serial(task) {
+  const run = queue.then(task);
+  queue = run.catch(() => {});
+  return run;
+}
+
+chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg?.target !== 'background') return;
+  const handler = { start: startTab, stop: stopTab, captures: syncTabs }[msg.type];
+  if (!handler) return;
+  handler(msg).then(
+    () => sendResponse({ ok: true }),
+    (err) => sendResponse({ ok: false, error: err?.message || String(err) }),
+  );
+  return true;
+});
+
+function startTab({ tabId, settings }) {
+  return serial(async () => {
+    if ((await activeTabs()).includes(tabId)) return;
+    await ensureOffscreen();
+    const streamId = await chrome.tabCapture.getMediaStreamId({ targetTabId: tabId });
+    if (!settings) ({ settings } = await chrome.storage.local.get('settings'));
+    const res = await toOffscreen({ type: 'start', tabId, streamId, settings: EQ.sanitize(settings) });
+    if (!res?.ok) throw new Error(res?.error || 'Não foi possível ligar o equalizador.');
+    await syncTabs(res);
+  });
+}
+
+async function stopTab({ tabId }) {
+  if (!(await hasOffscreen())) return syncTabs({ tabIds: [] });
+  const res = await toOffscreen({ type: 'stop', tabId });
+  await syncTabs(res);
+}
+
+async function syncTabs({ tabIds = [] }) {
+  const previous = await activeTabs();
+  await chrome.storage.session.set({ activeTabs: tabIds });
+  for (const id of previous) {
+    if (!tabIds.includes(id)) chrome.action.setBadgeText({ tabId: id, text: '' }).catch(() => {});
+  }
+  tabIds.forEach(showBadge);
+  if (!tabIds.length) serial(closeIfIdle);
+}
+
+function showBadge(tabId) {
+  chrome.action.setBadgeText({ tabId, text: 'EQ' }).catch(() => {});
+}
+
+async function activeTabs() {
+  const { activeTabs = [] } = await chrome.storage.session.get('activeTabs');
+  return activeTabs;
+}
+
+async function hasOffscreen() {
+  const contexts = await chrome.runtime.getContexts({ contextTypes: ['OFFSCREEN_DOCUMENT'] });
+  return contexts.length > 0;
+}
+
+async function ensureOffscreen() {
+  if (await hasOffscreen()) return;
+  await chrome.offscreen.createDocument({
+    url: OFFSCREEN_URL,
+    reasons: ['USER_MEDIA'],
+    justification: 'Aplicar o equalizador ao áudio capturado da aba.',
+  });
+}
+
+async function closeIfIdle() {
+  if ((await activeTabs()).length) return;
+  if (await hasOffscreen()) await chrome.offscreen.closeDocument();
+}
+
+// O documento recém-criado pode levar alguns milissegundos para começar a ouvir mensagens.
+async function toOffscreen(msg) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await chrome.runtime.sendMessage({ target: 'offscreen', ...msg });
+    } catch (err) {
+      if (attempt >= 20 || !/Receiving end does not exist/i.test(err?.message)) throw err;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+  }
+}
+
+chrome.tabs.onRemoved.addListener(async (tabId) => {
+  if (!(await activeTabs()).includes(tabId) || !(await hasOffscreen())) return;
+  toOffscreen({ type: 'stop', tabId }).then(syncTabs).catch(() => {});
+});
+
+// O selo de uma aba pode sumir quando ela carrega outra página; recoloca.
+chrome.tabs.onUpdated.addListener(async (tabId, info) => {
+  if (info.status === 'loading' && (await activeTabs()).includes(tabId)) showBadge(tabId);
+});
