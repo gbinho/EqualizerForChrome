@@ -44,6 +44,7 @@ const EQ = (() => {
       preset: s == null ? 'flat' : typeof s.preset === 'string' ? s.preset : null,
       pitch: whole(s?.pitch, -PITCH_RANGE, PITCH_RANGE),
       ambience: whole(s?.ambience, 0, 100),
+      keepPitch: s?.keepPitch !== false,
       level: whole(s?.level, 0, 100),
       separate: SEPARATE.some((m) => m.id === s?.separate) ? s.separate : 'off',
     };
@@ -74,11 +75,13 @@ const EQ = (() => {
     return (v > 0 ? '+' : '−') + n;
   }
 
+  // Sem esticar o som, o tom acompanha a velocidade: isto diz quanto ele anda.
+  const speedSemitones = (rate) => 12 * Math.log2(rate);
   const formatSpeed = (v) => `${v.toFixed(2).replace('.', ',')}×`;
 
   return {
     BANDS, LABELS, RANGE, PITCH_RANGE, SPEED, SEPARATE, PRESETS,
     clamp, sanitize, createFilters, dbToGain, semitonesToRatio, speedOf,
-    freqToX, xToFreq, formatDb, formatSpeed,
+    freqToX, xToFreq, formatDb, formatSpeed, speedSemitones,
   };
 })();

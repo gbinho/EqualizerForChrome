@@ -73,13 +73,14 @@ Abra **Efeitos** no fim do popup. Recolhido, ele mostra o que está ativo. Duplo
 
 | Controle | O que faz |
 | --- | --- |
-| **Velocidade** | De 0,5× a 2×, mudando o player da página. O tom continua o mesmo, então a voz não fica fina. Vale por aba, e não precisa do equalizador ligado. |
+| **Velocidade** | De 0,5× a 2×, mudando o player da página. Vale por aba, e não precisa do equalizador ligado. |
+| **Ao mudar** | Como o Chrome muda a velocidade. **Manter o tom** conserva a afinação esticando o som: bom para fala, mas embola música longe de 1×. **Sem distorção** toca mais devagar ou mais rápido de verdade, como um disco: som limpo, e o tom acompanha a velocidade. |
 | **Tom** | De −12 a +12 semitons, sem mexer na velocidade. Deslocar muito deixa um chiado característico do método; até uns 4 semitons costuma passar despercebido. |
 | **Ambiência 3D** | Abre o estéreo e acrescenta uma reverberação de sala, como se o som tivesse espaço em volta. Os graves ficam de fora dela, então o kick continua firme. |
 | **Nivelar volume** | Aproxima o volume de faixas gravadas em níveis diferentes, para não ter que mexer no volume a cada música. |
 | **Isolar** | **Sem voz** tira o que está no centro da mixagem na faixa da voz, mantendo grave e brilho. **Só voz** faz o contrário. |
 
-Velocidade e tom são independentes: dá para deixar a música mais lenta sem mudar o tom, ou baixar o tom sem mudar a velocidade.
+Com **Manter o tom**, velocidade e tom ficam independentes. Com **Sem distorção**, o tom cai junto com a velocidade (0,85× derruba cerca de 2,8 semitons), e o controle **Tom** pode trazer de volta o que você quiser.
 
 **Sobre o Isolar:** ele se apoia em como a música foi mixada, não em inteligência artificial. Em quase toda gravação a voz fica no centro e os instrumentos se espalham pelos lados, e é essa diferença que ele usa, tratando cada faixa de frequência de um jeito. Funciona bem em música comercial em estéreo. Não funciona em gravação mono, podcast ou live (não há nada a separar), e sobra parte da voz quando ela tem muito eco ou está dobrada. O resultado serve para cantar junto ou ouvir a batida, não é separação de estúdio.
 

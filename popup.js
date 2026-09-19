@@ -8,6 +8,11 @@
   const ACCENT = [255, 106, 26];
   const rgba = (a) => `rgba(${ACCENT.join(',')},${a})`;
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
+  // Manter o tom faz o Chrome esticar o som, o que embola musica; sem isso o tom acompanha a velocidade.
+  const SPEED_MODES = [
+    { keep: true, name: 'Manter o tom' },
+    { keep: false, name: 'Sem distorção' },
+  ];
 
   const $ = (id) => document.getElementById(id);
   const el = {
@@ -17,7 +22,7 @@
     presetsHead: $('presets-head'), chips: $('chips'), save: $('save'), remove: $('delete'),
     saveForm: $('save-form'), saveName: $('save-name'), saveCancel: $('save-cancel'),
     effects: $('effects'), effectsSummary: $('effects-summary'), effectsNote: $('effects-note'),
-    speed: $('speed'), speedValue: $('speed-value'),
+    speed: $('speed'), speedValue: $('speed-value'), speedModes: $('speed-modes'),
     pitch: $('pitch'), pitchValue: $('pitch-value'),
     ambience: $('ambience'), ambienceValue: $('ambience-value'),
     level: $('level'), levelValue: $('level-value'), modes: $('modes'),
@@ -97,6 +102,7 @@
     renderValues();
     renderChips();
     renderModes();
+    renderSpeedModes();
     renderFooter();
     renderHeader();
     if (state.active) connectSpectrum();
@@ -241,6 +247,16 @@
     });
     el.speed.addEventListener('change', () => { applySpeed(state.speed); saveSpeed(); });
     el.speed.addEventListener('dblclick', () => setSpeed(SPEED.normal));
+
+    el.speedModes.addEventListener('click', (e) => {
+      const chip = e.target.closest('.chip');
+      if (!chip) return;
+      state.settings.keepPitch = chip.dataset.keep === 'true';
+      renderSpeedModes();
+      applySpeed(state.speed);
+      onChange();
+      saveNow();
+    });
 
     const slider = (input, key) => {
       input.addEventListener('input', () => {
@@ -404,13 +420,15 @@
     return chrome.scripting.executeScript({
       target: { tabId: state.tab.id, allFrames },
       world: 'MAIN', // preciso enxergar os players que a página cria por JavaScript
-      args: [rate],
-      func: (value) => {
+      args: [rate, state.settings.keepPitch],
+      func: (value, keepPitch) => {
         window.__eqSpeed = value;
+        window.__eqKeepPitch = keepPitch;
         const known = (window.__eqMedia ||= new Set());
         const set = (media) => {
           try {
-            media.preservesPitch = true; // velocidade sem deixar a voz fina; o tom tem controle próprio
+            // Esticar o som mantem o tom, mas embola musica; sem esticar, o tom acompanha a velocidade.
+            media.preservesPitch = window.__eqKeepPitch;
             if (media.playbackRate !== window.__eqSpeed) media.playbackRate = window.__eqSpeed;
           } catch { /* player que não aceita: ignora */ }
         };
@@ -650,7 +668,7 @@
   }
 
   function renderEffects() {
-    const { pitch, ambience, level, separate } = state.settings;
+    const { pitch, ambience, level, separate, keepPitch } = state.settings;
     el.speedValue.textContent = EQ.formatSpeed(state.speed);
     el.pitchValue.textContent = `${EQ.formatDb(pitch)} st`;
     el.ambienceValue.textContent = `${ambience}%`;
@@ -668,8 +686,13 @@
 
     const noPlayer = state.speed !== SPEED.normal && state.speedPlayers === 0 && !state.speedError;
     const needsPower = !state.active && (pitch !== 0 || ambience > 0 || level > 0 || separate !== 'off');
+    const changed = state.speed !== SPEED.normal;
+    const semitones = Math.round(EQ.speedSemitones(state.speed) * 10) / 10;
+    const stretching = changed && keepPitch && Math.abs(state.speed - SPEED.normal) > 0.15;
     el.effectsNote.textContent = state.speedError
       || (noPlayer ? 'Nenhum player encontrado: dê play na página antes de mudar a velocidade' : '')
+      || (changed && !keepPitch ? `Sem esticar o som: o tom acompanha a velocidade (${EQ.formatDb(semitones)} st agora)` : '')
+      || (stretching ? 'Música embolada nessa velocidade? Toque em Sem distorção' : '')
       || (needsPower
         ? 'Tom, ambiência, nivelar e isolar só valem com o equalizador ligado'
         : 'A velocidade muda o player da página. Os outros mudam o som capturado.');
@@ -710,6 +733,18 @@
       chip.dataset.mode = mode.id;
       chip.textContent = mode.name;
       chip.setAttribute('aria-pressed', String(mode.id === state.settings.separate));
+      return chip;
+    }));
+  }
+
+  function renderSpeedModes() {
+    el.speedModes.replaceChildren(...SPEED_MODES.map(({ keep, name }) => {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'chip';
+      chip.dataset.keep = String(keep);
+      chip.textContent = name;
+      chip.setAttribute('aria-pressed', String(keep === state.settings.keepPitch));
       return chip;
     }));
   }
