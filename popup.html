@@ -58,6 +58,32 @@
     <div class="chips" id="chips" role="group" aria-labelledby="presets-label"></div>
   </div>
 
+  <details class="effects" id="effects">
+    <summary class="effects-head">
+      <span class="label">Efeitos</span>
+      <span class="effects-summary" id="effects-summary"></span>
+      <svg class="chevron" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5 9 4.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" /></svg>
+    </summary>
+    <div class="effects-body">
+      <label class="row">
+        <span class="label">Velocidade</span>
+        <input type="range" class="hslider" id="speed" min="0.5" max="2" step="0.05" value="1">
+        <output id="speed-value">1,00×</output>
+      </label>
+      <label class="row" title="Tom em semitons">
+        <span class="label">Tom</span>
+        <input type="range" class="hslider" id="pitch" min="-12" max="12" step="1" value="0">
+        <output id="pitch-value">0 st</output>
+      </label>
+      <label class="row">
+        <span class="label">Ambiência 3D</span>
+        <input type="range" class="hslider" id="ambience" min="0" max="100" step="1" value="0">
+        <output id="ambience-value">0%</output>
+      </label>
+      <p class="effects-note" id="effects-note"></p>
+    </div>
+  </details>
+
   <button id="ab" class="btn ab" type="button" disabled>Segure para ouvir o original</button>
 </section>
 

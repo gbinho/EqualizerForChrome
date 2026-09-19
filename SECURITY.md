@@ -6,13 +6,14 @@ Este projeto existe para ser um equalizador em que dá para confiar. Por isso a 
 
 Toda mudança neste repositório precisa manter estas garantias:
 
-- **Permissões mínimas:** só `tabCapture`, `offscreen`, `storage` e `activeTab`. Nada de `host_permissions`, `<all_urls>`, `scripting`, `tabs`, `history`, `cookies` ou `webRequest`.
+- **Permissões mínimas:** só `tabCapture`, `offscreen`, `storage`, `activeTab` e `scripting`. Nada de `host_permissions`, `<all_urls>`, `tabs`, `history`, `cookies` ou `webRequest`.
+- **`scripting` preso ao `activeTab`:** o único código que entra numa página é o que ajusta a velocidade do player, e ele roda apenas na aba em que a pessoa clicou no ícone da extensão, no momento em que ela mexe nesse controle. Sem `host_permissions`, o Chrome recusa qualquer outra aba. Esse código está na função `applySpeed`, em `popup.js`, e só toca em `playbackRate` e `preservesPitch`.
 - **Sem rede:** a política de segurança do `manifest.json` mantém `connect-src 'none'`. A extensão não faz requisições para lugar nenhum.
 - **Sem código remoto:** só roda o que está no repositório (`script-src 'self'`). Nada de `eval`, `new Function` ou scripts baixados.
 - **Sem dependências:** nenhuma biblioteca de terceiros, nenhum pacote npm, nenhuma etapa de build.
 - **Sem dados:** ajustes e presets ficam só em `chrome.storage.local`, no computador de quem usa. O áudio é processado em tempo real e nunca é gravado.
 
-Um pull request que quebre qualquer um desses pontos não é aceito, mesmo que traga uma função nova.
+Um pull request que quebre qualquer um desses pontos não é aceito, mesmo que traga uma função nova. Aumentar o alcance do código injetado (ler a página, mexer em outra coisa além da velocidade, rodar em abas que a pessoa não abriu pelo ícone) conta como quebra.
 
 ## Versões com suporte
 

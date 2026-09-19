@@ -153,3 +153,23 @@ body.is-active .hslider::-webkit-slider-thumb { background: var(--accent); }
 .ab.held { background: var(--text); border-color: var(--text); color: var(--bg); }
 
 .note { padding: 10px 16px 14px; font-size: 11px; line-height: 1.45; color: var(--faint); }
+
+/* Efeitos: recolhido por padrão, porque o dia a dia é EQ e preset */
+.effects { border-top: 1px solid var(--line); padding-top: 10px; }
+.effects-head { display: flex; align-items: center; gap: 8px; cursor: pointer; list-style: none; border-radius: 6px; }
+.effects-head::-webkit-details-marker { display: none; }
+.effects-head:hover .label { color: var(--text); }
+.effects-summary { flex: 1; min-width: 0; font-size: 12px; color: var(--accent); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chevron { width: 12px; height: 12px; flex: none; color: var(--muted); transition: transform .15s; }
+.effects[open] .chevron { transform: rotate(180deg); }
+.effects-body { display: grid; gap: 10px; padding-top: 10px; }
+.effects-body .label { flex: none; width: 108px; }
+.effects-body output { flex: none; width: 50px; text-align: right; font-size: 12px; font-variant-numeric: tabular-nums; }
+.effects-note { margin: 0; font-size: 11px; line-height: 1.45; color: var(--faint); }
+.effects-note.warn { color: var(--danger); }
+
+/* A barra de rolagem aparece quando os efeitos estão abertos: que ela siga o tema */
+::-webkit-scrollbar { width: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--line-strong); border: 3px solid var(--bg); border-radius: 999px; }
+::-webkit-scrollbar-thumb:hover { background: var(--muted); }

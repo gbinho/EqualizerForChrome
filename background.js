@@ -94,6 +94,7 @@ async function toOffscreen(msg) {
 }
 
 chrome.tabs.onRemoved.addListener(async (tabId) => {
+  forgetSpeed(tabId);
   if (!(await activeTabs()).includes(tabId) || !(await hasOffscreen())) return;
   toOffscreen({ type: 'stop', tabId }).then(syncTabs).catch(() => {});
 });
@@ -102,3 +103,11 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
 chrome.tabs.onUpdated.addListener(async (tabId, info) => {
   if (info.status === 'loading' && (await activeTabs()).includes(tabId)) showBadge(tabId);
 });
+
+// A velocidade é por aba: quando a aba fecha, o valor guardado não serve mais para ninguém.
+async function forgetSpeed(tabId) {
+  const { speeds } = await chrome.storage.session.get('speeds');
+  if (!speeds || speeds[tabId] === undefined) return;
+  delete speeds[tabId];
+  await chrome.storage.session.set({ speeds });
+}

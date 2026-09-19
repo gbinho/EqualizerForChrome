@@ -1,6 +1,6 @@
 // Popup: liga o equalizador na aba atual, ajusta as bandas e desenha curva + espectro.
 (() => {
-  const { BANDS, LABELS, RANGE, PRESETS } = EQ;
+  const { BANDS, LABELS, RANGE, PRESETS, SPEED } = EQ;
   const PAD = 8;       // respiro vertical do gráfico (igual a --pad no CSS)
   const THUMB = 14;    // diâmetro da bolinha do slider (igual a --thumb no CSS)
   const POINTS = 240;  // resolução da curva
@@ -16,6 +16,10 @@
     preamp: $('preamp'), preampValue: $('preamp-value'),
     presetsHead: $('presets-head'), chips: $('chips'), save: $('save'), remove: $('delete'),
     saveForm: $('save-form'), saveName: $('save-name'), saveCancel: $('save-cancel'),
+    effects: $('effects'), effectsSummary: $('effects-summary'), effectsNote: $('effects-note'),
+    speed: $('speed'), speedValue: $('speed-value'),
+    pitch: $('pitch'), pitchValue: $('pitch-value'),
+    ambience: $('ambience'), ambienceValue: $('ambience-value'),
     ab: $('ab'),
   };
 
@@ -29,6 +33,8 @@
     bypass: false,
     settings: EQ.sanitize(),
     custom: [],
+    speed: SPEED.normal, // por aba, porque quem muda a velocidade é o player da página
+    speedError: '',
   };
 
   const bandInputs = [];
@@ -41,6 +47,7 @@
   let raf = 0;
   let curve = null;    // resposta em dB, recalculada só quando os ganhos desenhados mudam
   let saveTimer = 0;
+  let speedTimer = 0;
 
   // Filtros "de mentira" só para calcular a curva exata que o som real vai ter.
   const offline = new OfflineAudioContext(1, 1, 48000);
@@ -62,20 +69,27 @@
     try { state.host = new URL(tab.url).hostname.replace(/^www\./, ''); } catch { state.host = ''; }
 
     const [local, session] = await Promise.all([
-      chrome.storage.local.get(['settings', 'customPresets']),
-      chrome.storage.session.get('activeTabs'),
+      chrome.storage.local.get(['settings', 'customPresets', 'effectsOpen']),
+      chrome.storage.session.get(['activeTabs', 'speeds']),
     ]);
     state.settings = EQ.sanitize(local.settings);
     state.custom = Array.isArray(local.customPresets) ? local.customPresets : [];
     state.active = !!tab && (session.activeTabs || []).includes(tab.id);
+    state.speed = EQ.speedOf(session.speeds?.[tab?.id]);
+    el.effects.open = !!local.effectsOpen;
 
     shown = state.settings.gains.slice();
     syncBandInputs();
     el.preamp.value = state.settings.preamp;
+    el.speed.value = state.speed;
+    el.pitch.value = state.settings.pitch;
+    el.ambience.value = state.settings.ambience;
     renderValues();
     renderChips();
     renderHeader();
     if (state.active) connectSpectrum();
+    // A página pode ter recarregado desde a última vez: devolve a velocidade escolhida.
+    if (state.speed !== SPEED.normal) applySpeed(state.speed);
   }
 
   // ---------- montagem ----------
@@ -165,6 +179,8 @@
       saveNow();
     });
 
+    bindEffects();
+
     // Segurar o botão desliga o efeito só enquanto está pressionado (comparação A/B).
     el.ab.addEventListener('pointerdown', (e) => {
       if (el.ab.disabled) return;
@@ -182,6 +198,41 @@
     });
     window.addEventListener('blur', () => setBypass(false));
     window.addEventListener('pagehide', saveNow);
+  }
+
+  function bindEffects() {
+    el.effects.addEventListener('toggle', () => chrome.storage.local.set({ effectsOpen: el.effects.open }));
+
+    el.speed.addEventListener('input', () => {
+      state.speed = EQ.speedOf(Number(el.speed.value));
+      renderEffects();
+      clearTimeout(speedTimer);
+      speedTimer = setTimeout(() => applySpeed(state.speed), 120);
+    });
+    el.speed.addEventListener('change', () => { applySpeed(state.speed); saveSpeed(); });
+    el.speed.addEventListener('dblclick', () => setSpeed(SPEED.normal));
+
+    el.pitch.addEventListener('input', () => {
+      state.settings.pitch = Number(el.pitch.value);
+      onChange();
+    });
+    el.pitch.addEventListener('change', saveNow);
+    el.pitch.addEventListener('dblclick', () => {
+      state.settings.pitch = 0;
+      el.pitch.value = 0;
+      onChange();
+    });
+
+    el.ambience.addEventListener('input', () => {
+      state.settings.ambience = Number(el.ambience.value);
+      onChange();
+    });
+    el.ambience.addEventListener('change', saveNow);
+    el.ambience.addEventListener('dblclick', () => {
+      state.settings.ambience = 0;
+      el.ambience.value = 0;
+      onChange();
+    });
   }
 
   // ---------- ações ----------
@@ -222,7 +273,8 @@
       ? state.custom.find((c) => `custom:${c.name}` === id)
       : PRESETS.find((p) => p.id === id);
     if (!preset) return;
-    state.settings = EQ.sanitize({ gains: preset.gains, preamp: preset.preamp, preset: id });
+    // O preset mexe só no equalizador; os efeitos continuam como estavam.
+    state.settings = EQ.sanitize({ ...state.settings, gains: preset.gains, preamp: preset.preamp, preset: id });
     el.preamp.value = state.settings.preamp;
     renderPresetState();
     morphTo(state.settings.gains);
@@ -263,6 +315,7 @@
 
   function onChange() {
     renderValues();
+    renderEffects();
     // Vai direto para o documento que processa o som; se ninguém estiver equalizando, só é ignorado.
     chrome.runtime.sendMessage({ target: 'offscreen', type: 'settings', settings: state.settings }).catch(() => {});
     clearTimeout(saveTimer);
@@ -273,6 +326,56 @@
   function saveNow() {
     clearTimeout(saveTimer);
     chrome.storage.local.set({ settings: state.settings });
+  }
+
+  // ---------- velocidade: quem muda é o player da página ----------
+
+  function setSpeed(rate) {
+    state.speed = rate;
+    el.speed.value = rate;
+    renderEffects();
+    applySpeed(rate);
+    saveSpeed();
+  }
+
+  async function applySpeed(rate) {
+    if (!state.tab || state.restricted) return;
+    clearTimeout(speedTimer);
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId: state.tab.id, allFrames: true },
+        args: [rate],
+        func: (value) => {
+          window.__eqSpeed = value;
+          const apply = () => {
+            for (const media of document.querySelectorAll('video, audio')) {
+              media.preservesPitch = true; // velocidade sem deixar a voz fina; o tom tem controle próprio
+              if (media.playbackRate !== window.__eqSpeed) media.playbackRate = window.__eqSpeed;
+            }
+          };
+          apply();
+          if (!window.__eqSpeedWatch) {
+            window.__eqSpeedWatch = true;
+            // Faixa nova ou player recriado voltam na velocidade escolhida.
+            let pending = 0;
+            const soon = () => { clearTimeout(pending); pending = setTimeout(apply, 250); };
+            document.addEventListener('play', apply, true);
+            new MutationObserver(soon).observe(document.documentElement, { childList: true, subtree: true });
+          }
+        },
+      });
+      state.speedError = '';
+    } catch {
+      state.speedError = 'A velocidade não funciona nesta página';
+    }
+    renderEffects();
+  }
+
+  async function saveSpeed() {
+    if (!state.tab) return;
+    const { speeds = {} } = await chrome.storage.session.get('speeds');
+    speeds[state.tab.id] = state.speed;
+    chrome.storage.session.set({ speeds });
   }
 
   // ---------- transição entre presets ----------
@@ -459,6 +562,7 @@
       ? 'O Chrome não deixa mexer no som das páginas internas'
       : 'Ligue para ouvir o efeito nesta aba';
     el.ab.disabled = !active;
+    renderEffects();
     draw();
   }
 
@@ -469,6 +573,28 @@
       valueCells[i].classList.toggle('on', g !== 0);
     });
     el.preampValue.textContent = `${EQ.formatDb(preamp)} dB`;
+  }
+
+  function renderEffects() {
+    const { pitch, ambience } = state.settings;
+    el.speedValue.textContent = EQ.formatSpeed(state.speed);
+    el.pitchValue.textContent = `${EQ.formatDb(pitch)} st`;
+    el.ambienceValue.textContent = `${ambience}%`;
+    el.speed.disabled = state.restricted || !state.tab;
+
+    // O resumo aparece recolhido, então dá para ver o que está ligado sem abrir.
+    const parts = [];
+    if (state.speed !== SPEED.normal) parts.push(EQ.formatSpeed(state.speed));
+    if (pitch !== 0) parts.push(`${EQ.formatDb(pitch)} st`);
+    if (ambience > 0) parts.push(`${ambience}%`);
+    el.effectsSummary.textContent = parts.join(' · ');
+
+    const needsPower = !state.active && (pitch !== 0 || ambience > 0);
+    el.effectsNote.textContent = state.speedError
+      || (needsPower
+        ? 'Tom e ambiência só valem com o equalizador ligado'
+        : 'Velocidade muda o player da página. Tom e ambiência mudam o som capturado.');
+    el.effectsNote.classList.toggle('warn', !!state.speedError);
   }
 
   // Os presets do usuário vêm primeiro; depois os prontos, já na ordem "mais graves primeiro".
