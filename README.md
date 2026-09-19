@@ -1,6 +1,6 @@
 # Equalizador de Som
 
-Equalizador de 10 bandas para o Chrome, com velocidade, tom e ambiência 3D. Funciona no SoundCloud, no YouTube e em qualquer aba que esteja tocando som.
+Equalizador de 10 bandas para o Chrome, com velocidade, tom, ambiência 3D, nivelamento de volume e isolamento de voz. Funciona no SoundCloud, no YouTube e em qualquer aba que esteja tocando som.
 
 É de código aberto e pequeno o bastante para qualquer pessoa ler, e não esconde nada: não se conecta à internet, não coleta dados e não fica rodando nas páginas que você visita.
 
@@ -28,7 +28,7 @@ Esta extensão faz só o que promete, com o mínimo de permissões. E você pode
 
 **O que ela não tem, e o Chrome garante:**
 
-- **Nenhum acesso permanente a sites.** Não há `host_permissions` nem scripts rodando de fundo nas páginas. O único código que entra numa página é o que ajusta a velocidade do player, ele só roda na aba em que você clicou no ícone, só quando você mexe nesse controle, e só mexe na velocidade (é a função `applySpeed`, no [`popup.js`](popup.js)). Em toda aba que você não abriu pelo ícone, o Chrome simplesmente não deixa a extensão entrar.
+- **Nenhum acesso permanente a sites.** Não há `host_permissions` nem scripts rodando de fundo nas páginas. O único código que entra numa página é o que ajusta a velocidade do player: ele só roda na aba em que você clicou no ícone e só quando você mexe nesse controle. Ele guarda a lista de players, descobre os novos pelo `play()` e escreve em `playbackRate`. Não lê nada da página. É a função `injectSpeed`, no [`popup.js`](popup.js). Em toda aba que você não abriu pelo ícone, o Chrome simplesmente não deixa a extensão entrar.
 - **Nenhuma conexão com a internet.** A política de segurança no [`manifest.json`](manifest.json) (`connect-src 'none'`) proíbe a extensão de fazer qualquer requisição de rede. Nada sai do seu computador.
 - **Nenhum código de fora.** Só roda o que está nesta pasta (`script-src 'self'`): sem rastreadores, analytics, anúncios ou scripts baixados.
 - **Nenhuma dependência.** É HTML, CSS e JavaScript puros, sem bibliotecas e sem etapa de build. O código daqui é exatamente o que roda no seu navegador.
@@ -38,7 +38,7 @@ Esta extensão faz só o que promete, com o mínimo de permissões. E você pode
 
 1. Leia o [`manifest.json`](manifest.json): as permissões e a política de segurança estão lá, em poucas linhas.
 2. Procure nos arquivos `.js` por `fetch`, `XMLHttpRequest`, `WebSocket` ou `http`. O único resultado é um texto em `popup.js` que reconhece o endereço da Chrome Web Store, onde o Chrome não permite equalizar. Não há nenhuma conexão.
-3. Procure por `executeScript`: aparece uma vez só, na função que muda a velocidade.
+3. Procure por `executeScript`: aparece uma vez só, na função que muda a velocidade. Dá para ler o que ela faz por inteiro, são vinte linhas.
 4. Depois de instalar, abra `chrome://extensions`, clique em **Detalhes** no Equalizador de Som e veja as permissões que o próprio Chrome lista.
 
 > **Instale só a partir deste repositório.** A extensão ainda não está na Chrome Web Store: qualquer versão com este nome em outro lugar não é daqui.
@@ -58,37 +58,43 @@ Não apague nem mova a pasta depois de instalar, porque o Chrome carrega a exten
 ## Usar
 
 1. Abra o SoundCloud ou o YouTube e dê play.
-2. Clique no ícone do equalizador e depois em **Ligar**. O ícone ganha o selo **EQ** nessa aba.
+2. Clique no ícone do equalizador e depois em **Ligar**. O ícone ganha o selo **EQ** nessa aba. **Ctrl+Shift+E** faz o mesmo sem abrir o popup.
 3. Clique num preset para trocar o som na hora. Os que reforçam graves vêm primeiro, e **Plano** volta ao neutro.
 4. Ou arraste as bolinhas (a rodinha do mouse em cima delas também funciona). Duplo clique volta a banda para 0. Gostou do resultado? Clique em **Salvar ajuste** para virar um preset seu.
 5. Segure **Segure para ouvir o original** para comparar com o som sem efeito.
 
-Os ajustes valem para todas as abas equalizadas e ficam salvos. Para desligar numa aba, abra o popup e clique em **Ligado**.
+Marque **Lembrar para \<site\>** no rodapé e aquele site passa a ter os ajustes dele: o YouTube pode ficar na curva de voz e o SoundCloud na de graves, cada um voltando sozinho. Sem marcar, os ajustes valem para todas as abas equalizadas. Quando há mais de uma aba com o equalizador ligado, aparece **Desligar todas**.
+
+Um ponto vermelho ao lado de **Pré-amplificação** quer dizer que o limitador está segurando o volume: baixe a pré-amplificação para o som respirar.
 
 ### Efeitos
 
-Abra **Efeitos** no fim do popup. Recolhido, ele mostra o que está ativo. Duplo clique em qualquer um volta ao normal.
+Abra **Efeitos** no fim do popup. Recolhido, ele mostra o que está ativo. Duplo clique em qualquer controle volta ao normal.
 
 | Controle | O que faz |
 | --- | --- |
 | **Velocidade** | De 0,5× a 2×, mudando o player da página. O tom continua o mesmo, então a voz não fica fina. Vale por aba, e não precisa do equalizador ligado. |
 | **Tom** | De −12 a +12 semitons, sem mexer na velocidade. Deslocar muito deixa um chiado característico do método; até uns 4 semitons costuma passar despercebido. |
 | **Ambiência 3D** | Abre o estéreo e acrescenta uma reverberação de sala, como se o som tivesse espaço em volta. Os graves ficam de fora dela, então o kick continua firme. |
+| **Nivelar volume** | Aproxima o volume de faixas gravadas em níveis diferentes, para não ter que mexer no volume a cada música. |
+| **Isolar** | **Sem voz** tira o que está no centro da mixagem na faixa da voz, mantendo grave e brilho. **Só voz** faz o contrário. |
 
 Velocidade e tom são independentes: dá para deixar a música mais lenta sem mudar o tom, ou baixar o tom sem mudar a velocidade.
+
+**Sobre o Isolar:** ele se apoia em como a música foi mixada, não em inteligência artificial. Em quase toda gravação a voz fica no centro e os instrumentos se espalham pelos lados, e é essa diferença que ele usa, tratando cada faixa de frequência de um jeito. Funciona bem em música comercial em estéreo. Não funciona em gravação mono, podcast ou live (não há nada a separar), e sobra parte da voz quando ela tem muito eco ou está dobrada. O resultado serve para cantar junto ou ouvir a batida, não é separação de estúdio.
 
 ## Como funciona
 
 ```
 aba (SoundCloud, YouTube…) ──tabCapture──▶ página invisível da extensão
-   pré-amplificação ▶ 10 filtros (31 Hz a 16 kHz) ▶ tom ▶ ambiência ▶ limitador ▶ alto-falante
-                                                        └▶ analisador ▶ espectro no popup
+   pré-amp ▶ 10 filtros ▶ tom ▶ isolar ▶ ambiência ▶ nivelador ▶ limitador ▶ alto-falante
+                                                              └▶ analisador ▶ espectro no popup
 ```
 
 - O som da aba passa pela [Web Audio API](https://developer.mozilla.org/pt-BR/docs/Web/API/Web_Audio_API) numa página invisível (`offscreen.html`) e volta para o alto-falante já processado.
 - Cada banda é um filtro `peaking` de uma oitava. No fim da cadeia, um limitador evita distorção quando você sobe muito os graves.
 - O tom é deslocado por um `AudioWorklet` próprio (`pitch-processor.js`): duas leituras da mesma linha de atraso, com crossfade entre elas.
-- A ambiência soma dois efeitos: o estéreo é aberto por mid/side e uma reverberação gerada no próprio código (ruído que decai) entra só acima de 250 Hz.
+- Isolar e ambiência trabalham em mid/side: o centro da mixagem é separado das laterais. Isolar mexe no centro por faixa de frequência; a ambiência abre as laterais e soma uma reverberação gerada no próprio código, que entra só acima de 250 Hz.
 - A velocidade é a única coisa que acontece fora da extensão: um comando ajusta o `playbackRate` do player da aba.
 - A curva do popup é a resposta real dos filtros (`getFrequencyResponse`), e o espectro é o som ao vivo depois do processamento. O que aparece na tela é o que você ouve.
 
@@ -98,6 +104,7 @@ aba (SoundCloud, YouTube…) ──tabCapture──▶ página invisível da ext
 - Páginas internas (`chrome://`, Chrome Web Store) não podem ser equalizadas.
 - Se distorcer mesmo com o limitador, baixe a **Pré-amplificação**.
 - Com o tom deslocado, o som fica alguns milissegundos atrás da imagem do vídeo. Em música não se nota.
+- O perfil de um site é recarregado quando você abre o popup naquele site. Com duas abas de sites diferentes equalizando ao mesmo tempo, vale o último ajuste feito.
 - Recarregar a extensão em `chrome://extensions` desliga o equalizador em todas as abas. É só ligar de novo.
 - Requer Chrome 124 ou mais recente.
 
@@ -105,9 +112,9 @@ aba (SoundCloud, YouTube…) ──tabCapture──▶ página invisível da ext
 
 | Arquivo | Função |
 | --- | --- |
-| `manifest.json` | Configuração da extensão (Manifest V3): permissões e política de segurança |
+| `manifest.json` | Configuração da extensão (Manifest V3): permissões, política de segurança e atalho |
 | `eq.js` | Bandas, presets, efeitos e filtros, compartilhados pelos outros arquivos |
-| `background.js` | Liga e desliga a captura das abas e cuida do selo EQ |
+| `background.js` | Liga e desliga a captura das abas, atende o atalho e cuida do selo EQ |
 | `offscreen.html` / `offscreen.js` | Página invisível que recebe o som da aba, aplica tudo e toca de volta |
 | `pitch-processor.js` | O deslocador de tom, rodando no processador de áudio do Chrome |
 | `popup.html` / `popup.css` / `popup.js` | A janelinha com o gráfico, os presets, os efeitos e o espectro ao vivo |

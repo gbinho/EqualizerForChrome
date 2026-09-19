@@ -37,7 +37,7 @@
 
 <section class="controls">
   <label class="row preamp">
-    <span class="label">Pré-amplificação</span>
+    <span class="label">Pré-amplificação<span class="clip" id="clip" title="O limitador está segurando o volume: baixe a pré-amplificação" hidden></span></span>
     <input type="range" class="hslider" id="preamp" min="-12" max="12" step="0.5" value="0">
     <output id="preamp-value">0 dB</output>
   </label>
@@ -80,6 +80,15 @@
         <input type="range" class="hslider" id="ambience" min="0" max="100" step="1" value="0">
         <output id="ambience-value">0%</output>
       </label>
+      <label class="row" title="Aproxima o volume de faixas gravadas em níveis diferentes">
+        <span class="label">Nivelar volume</span>
+        <input type="range" class="hslider" id="level" min="0" max="100" step="1" value="0">
+        <output id="level-value">0%</output>
+      </label>
+      <div class="row">
+        <span class="label" id="modes-label">Isolar</span>
+        <div class="chips modes" id="modes" role="group" aria-labelledby="modes-label"></div>
+      </div>
       <p class="effects-note" id="effects-note"></p>
     </div>
   </details>
@@ -87,7 +96,13 @@
   <button id="ab" class="btn ab" type="button" disabled>Segure para ouvir o original</button>
 </section>
 
-<footer class="note">Vale para todas as abas equalizadas. Duplo clique numa banda zera ela.</footer>
+<footer class="foot">
+  <label class="remember">
+    <input type="checkbox" id="remember">
+    <span id="remember-label">Lembrar para este site</span>
+  </label>
+  <button class="link" id="stop-all" type="button" hidden></button>
+</footer>
 
 <script src="eq.js"></script>
 <script src="popup.js"></script>

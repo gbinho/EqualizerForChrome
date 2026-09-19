@@ -16,13 +16,29 @@ function serial(task) {
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg?.target !== 'background') return;
-  const handler = { start: startTab, stop: stopTab, captures: syncTabs }[msg.type];
+  const handler = { start: startTab, stop: stopTab, stopAll, captures: syncTabs }[msg.type];
   if (!handler) return;
   handler(msg).then(
     () => sendResponse({ ok: true }),
     (err) => sendResponse({ ok: false, error: err?.message || String(err) }),
   );
   return true;
+});
+
+// Atalho de teclado: liga e desliga na aba da frente, sem abrir o popup.
+chrome.commands.onCommand.addListener(async (command) => {
+  if (command !== 'toggle') return;
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tab) return;
+  const running = (await activeTabs()).includes(tab.id);
+  try {
+    if (running) await stopTab({ tabId: tab.id });
+    else await startTab({ tabId: tab.id, settings: await settingsFor(tab) });
+  } catch {
+    // Sem popup aberto não há onde escrever o erro; o selo avisa por um instante.
+    chrome.action.setBadgeText({ tabId: tab.id, text: '!' }).catch(() => {});
+    setTimeout(() => chrome.action.setBadgeText({ tabId: tab.id, text: '' }).catch(() => {}), 1500);
+  }
 });
 
 function startTab({ tabId, settings }) {
@@ -41,6 +57,23 @@ async function stopTab({ tabId }) {
   if (!(await hasOffscreen())) return syncTabs({ tabIds: [] });
   const res = await toOffscreen({ type: 'stop', tabId });
   await syncTabs(res);
+}
+
+async function stopAll() {
+  const list = await activeTabs();
+  if (!list.length) return;
+  if (!(await hasOffscreen())) return syncTabs({ tabIds: [] });
+  let last = { tabIds: [] };
+  for (const id of list) last = await toOffscreen({ type: 'stop', tabId: id });
+  await syncTabs(last);
+}
+
+// O perfil do site, quando existe, também vale para o atalho de teclado.
+async function settingsFor(tab) {
+  const { settings, profiles } = await chrome.storage.local.get(['settings', 'profiles']);
+  let host = '';
+  try { host = new URL(tab.url).hostname.replace(/^www\./, ''); } catch { host = ''; }
+  return EQ.sanitize((host && profiles?.[host]) || settings);
 }
 
 async function syncTabs({ tabIds = [] }) {

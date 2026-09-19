@@ -8,6 +8,12 @@ const EQ = (() => {
   const Q = 1.41;        // cerca de uma oitava de largura por banda
   const PITCH_RANGE = 12; // semitons para cima e para baixo
   const SPEED = { min: 0.5, max: 2, step: 0.05, normal: 1 };
+  // Isolar usa a posicao no estereo: voz quase sempre no centro, instrumentos espalhados.
+  const SEPARATE = [
+    { id: 'off', name: 'Normal' },
+    { id: 'beat', name: 'Sem voz' },
+    { id: 'vocal', name: 'Só voz' },
+  ];
 
   // Ordem = quanto reforçam os graves (o uso principal), com o Plano na frente como volta ao neutro.
   // preamp negativo nas curvas que reforçam muito, para sobrar folga antes do limitador.
@@ -38,6 +44,8 @@ const EQ = (() => {
       preset: s == null ? 'flat' : typeof s.preset === 'string' ? s.preset : null,
       pitch: whole(s?.pitch, -PITCH_RANGE, PITCH_RANGE),
       ambience: whole(s?.ambience, 0, 100),
+      level: whole(s?.level, 0, 100),
+      separate: SEPARATE.some((m) => m.id === s?.separate) ? s.separate : 'off',
     };
   }
 
@@ -69,7 +77,7 @@ const EQ = (() => {
   const formatSpeed = (v) => `${v.toFixed(2).replace('.', ',')}×`;
 
   return {
-    BANDS, LABELS, RANGE, PITCH_RANGE, SPEED, PRESETS,
+    BANDS, LABELS, RANGE, PITCH_RANGE, SPEED, SEPARATE, PRESETS,
     clamp, sanitize, createFilters, dbToGain, semitonesToRatio, speedOf,
     freqToX, xToFreq, formatDb, formatSpeed,
   };

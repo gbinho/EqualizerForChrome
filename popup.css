@@ -173,3 +173,18 @@ body.is-active .hslider::-webkit-slider-thumb { background: var(--accent); }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--line-strong); border: 3px solid var(--bg); border-radius: 999px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+
+/* Isolar voz/beat: botoes menores, na mesma linha do rotulo */
+.modes { flex: 1; gap: 4px; }
+.modes .chip { height: 26px; padding: 0 9px; font-size: 11.5px; }
+
+/* Ponto que acende quando o limitador esta segurando o volume */
+.clip { display: inline-block; width: 6px; height: 6px; margin-left: 5px; border-radius: 50%; background: var(--danger); vertical-align: middle; }
+
+/* Rodape: perfil do site e as outras abas equalizadas */
+.foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 16px 14px; font-size: 11.5px; color: var(--faint); }
+.remember { display: flex; align-items: center; gap: 6px; cursor: pointer; min-width: 0; }
+.remember input { accent-color: var(--accent); width: 14px; height: 14px; margin: 0; cursor: pointer; }
+.remember span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.remember:hover span { color: var(--muted); }
+#stop-all { flex: none; font-size: 11.5px; }

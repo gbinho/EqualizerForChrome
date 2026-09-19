@@ -2,11 +2,17 @@
   "manifest_version": 3,
   "name": "Equalizador de Som",
   "short_name": "Equalizador",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Equalizador de 10 bandas para qualquer aba: SoundCloud, YouTube e o que mais estiver tocando.",
   "homepage_url": "https://github.com/gbinho/EqualizerForChrome",
   "minimum_chrome_version": "124",
-  "permissions": ["tabCapture", "offscreen", "storage", "activeTab", "scripting"],
+  "permissions": [
+    "tabCapture",
+    "offscreen",
+    "storage",
+    "activeTab",
+    "scripting"
+  ],
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'none'"
   },
@@ -28,5 +34,14 @@
     "32": "icons/icon32.png",
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
+  },
+  "commands": {
+    "toggle": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+E",
+        "mac": "Command+Shift+E"
+      },
+      "description": "Ligar ou desligar o equalizador nesta aba"
+    }
   }
 }

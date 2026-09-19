@@ -32,9 +32,10 @@ Funciona em qualquer site porque processa o áudio da aba inteira (`chrome.tabCa
 
 - 10 bandas em oitavas (31 Hz a 16 kHz), ±12 dB em passos de 0,5 dB, com pré-amplificação de ±12 dB.
 - 12 predefinições prontas, presets pessoais salvos, "segure para ouvir o original" para comparação A/B e espectro ao vivo.
-- Efeitos: velocidade de 0,5× a 2× (muda o `playbackRate` do player da página, via `scripting` + `activeTab`, e vale por aba), tom de −12 a +12 semitons (AudioWorklet próprio) e ambiência 3D (mid/side + reverberação gerada no código, que entra só acima de 250 Hz).
+- Efeitos: velocidade de 0,5× a 2× (muda o `playbackRate` do player da página, via `scripting` + `activeTab` no mundo da página, e vale por aba), tom de −12 a +12 semitons (AudioWorklet próprio), ambiência 3D (mid/side + reverberação gerada no código), nivelar volume (compressor) e isolar voz/beat (cancelamento do centro por faixa de frequência).
 - Um limitador no fim da cadeia evita distorção quando os graves sobem.
-- Os ajustes são globais: valem para todas as abas equalizadas e ficam salvos em `chrome.storage.local`.
+- Os ajustes são globais, mas cada site pode ter um perfil próprio ("lembrar para este site"), recarregado quando o popup abre naquele site. Tudo fica em `chrome.storage.local`.
+- Atalho Ctrl+Shift+E liga e desliga na aba da frente sem abrir o popup.
 - Manifest V3, Chrome 124+, HTML/CSS/JS puro sem etapa de build. Velocidade e tom são independentes entre si.
 - Enquanto uma aba está equalizada, o Chrome mostra o próprio aviso de captura de áudio. A extensão não controla isso.
 - Páginas internas (`chrome://`, Chrome Web Store) não podem ser equalizadas.

@@ -11,6 +11,16 @@
   const AMBIENCE_WET = 0.45;    // quanto de reverberação entra no máximo
   const REVERB_SECONDS = 2.2;
   const REVERB_FLOOR = 250;     // Hz; abaixo disso a reverberação não entra, e o grave fica firme
+  const VOICE_LOW = 200;        // Hz; faixa onde a voz vive, usada para isolar voz/beat
+  const VOICE_HIGH = 9000;
+
+  // Quanto cada caminho do centro e das laterais entra em cada modo de isolamento:
+  // [centro inteiro, centro grave, centro agudo, centro na faixa da voz, laterais]
+  const SEPARATION = {
+    off: [1, 0, 0, 0, 1],
+    beat: [0, 1, 1, 0, 1],  // tira o centro na faixa da voz; grave e brilho continuam
+    vocal: [0, 0, 0, 1, 0], // fica só o centro na faixa da voz
+  };
 
   const captures = new Map(); // tabId -> { stream, chain }
   let audio = null;
@@ -59,7 +69,7 @@
     report();
   }
 
-  // aba -> pré-amp -> 10 filtros -> tom -> ambiência -> limitador -> trim -> alto-falante
+  // aba -> pré-amp -> 10 filtros -> tom -> isolar -> ambiência -> nivelador -> limitador -> alto-falante
   function buildChain(ctx, stream) {
     const source = ctx.createMediaStreamSource(stream);
     const preamp = ctx.createGain();
@@ -70,7 +80,17 @@
       channelCount: 2,
       channelCountMode: 'explicit',
     });
+    const separator = buildSeparator(ctx);
     const ambience = buildAmbience(ctx);
+
+    // Nivelador: em 0 fica transparente (razão 1 não comprime nada).
+    const leveler = ctx.createDynamicsCompressor();
+    leveler.threshold.value = -2;
+    leveler.knee.value = 12;
+    leveler.ratio.value = 1;
+    leveler.attack.value = 0.02;
+    leveler.release.value = 0.35;
+    const levelMakeup = ctx.createGain();
 
     const limiter = ctx.createDynamicsCompressor();
     limiter.threshold.value = LIMIT_DB;
@@ -88,9 +108,12 @@
     analyser.minDecibels = -95;
     analyser.maxDecibels = -20;
 
-    const line = [source, preamp, ...filters, pitch, ambience.input];
+    const line = [source, preamp, ...filters, pitch, separator.input];
     line.reduce((from, to) => (from.connect(to), to));
-    ambience.output.connect(limiter);
+    separator.output.connect(ambience.input);
+    ambience.output.connect(leveler);
+    leveler.connect(levelMakeup);
+    levelMakeup.connect(limiter);
     limiter.connect(trim);
     trim.connect(ctx.destination);
     trim.connect(analyser);
@@ -100,10 +123,15 @@
       preamp,
       filters,
       ratio: pitch.parameters.get('ratio'),
+      separator,
       ambience,
+      leveler,
+      levelMakeup,
+      limiter,
       readSpectrum: spectrumReader(analyser, ctx.sampleRate),
       disconnect: () => {
-        [...line, limiter, trim, analyser].forEach((n) => n.disconnect());
+        [...line, leveler, levelMakeup, limiter, trim, analyser].forEach((n) => n.disconnect());
+        separator.disconnect();
         ambience.disconnect();
       },
     };
@@ -111,10 +139,75 @@
     return chain;
   }
 
-  // Ambiência 3D: abre o estéreo (mid/side) e soma uma reverberação gerada aqui mesmo.
+  // Separa o que está no centro (voz, quase sempre) do que está espalhado (instrumentos),
+  // e trata o centro por faixa de frequência: grave e brilho podem ficar mesmo sem a voz.
+  function buildSeparator(ctx) {
+    const { input, splitter, mid, side, merger, output, nodes } = midSide(ctx);
+
+    const full = ctx.createGain();
+    const lowPath = ctx.createBiquadFilter();
+    lowPath.type = 'lowpass';
+    lowPath.frequency.value = VOICE_LOW;
+    const low = ctx.createGain();
+    const highPath = ctx.createBiquadFilter();
+    highPath.type = 'highpass';
+    highPath.frequency.value = VOICE_HIGH;
+    const high = ctx.createGain();
+    const bandLow = ctx.createBiquadFilter();
+    bandLow.type = 'highpass';
+    bandLow.frequency.value = VOICE_LOW;
+    const bandHigh = ctx.createBiquadFilter();
+    bandHigh.type = 'lowpass';
+    bandHigh.frequency.value = VOICE_HIGH;
+    const band = ctx.createGain();
+    low.gain.value = 0;
+    high.gain.value = 0;
+    band.gain.value = 0;
+
+    mid.connect(full);
+    mid.connect(lowPath).connect(low);
+    mid.connect(highPath).connect(high);
+    mid.connect(bandLow).connect(bandHigh).connect(band);
+    for (const path of [full, low, high, band]) {
+      path.connect(merger, 0, 0);
+      path.connect(merger, 0, 1);
+    }
+
+    const extra = [full, lowPath, low, highPath, high, bandLow, bandHigh, band];
+    return {
+      input, output, full, low, high, band, side,
+      disconnect: () => [...nodes, ...extra].forEach((n) => n.disconnect()),
+    };
+  }
+
+  // Ambiência 3D: abre o estéreo e soma uma reverberação gerada aqui mesmo.
   function buildAmbience(ctx) {
+    const { input, mid, side, merger, output, nodes } = midSide(ctx);
+    mid.connect(merger, 0, 0);
+    mid.connect(merger, 0, 1);
+
+    const send = ctx.createBiquadFilter();
+    send.type = 'highpass';
+    send.frequency.value = REVERB_FLOOR;
+    const convolver = ctx.createConvolver();
+    convolver.buffer = impulse ||= buildImpulse(ctx);
+    const wet = ctx.createGain();
+    wet.gain.value = 0;
+
+    merger.connect(send);
+    send.connect(convolver);
+    convolver.connect(wet);
+    wet.connect(output);
+
+    const extra = [send, convolver, wet];
+    return { input, output, side, wet, disconnect: () => [...nodes, ...extra].forEach((n) => n.disconnect()) };
+  }
+
+  // Base compartilhada: separa centro (mid) e laterais (side) e junta de volta em estéreo.
+  // Quem chama decide o que fazer com o centro antes de ligá-lo ao merger.
+  function midSide(ctx) {
     const input = ctx.createGain();
-    // Força dois canais: em som mono o lado fica zerado, e abrir o estéreo não joga tudo para um lado.
+    // Força dois canais: em som mono o lado fica zerado, e mexer no estéreo não joga tudo para um lado.
     const stereo = ctx.createGain();
     stereo.channelCount = 2;
     stereo.channelCountMode = 'explicit';
@@ -129,11 +222,11 @@
     const mid = ctx.createGain();
     const side = ctx.createGain();
     const sideInverted = ctx.createGain();
+    const output = ctx.createGain();
     midLeft.gain.value = 0.5;
     midRight.gain.value = 0.5;
     sideLeft.gain.value = 0.5;
     sideRight.gain.value = -0.5;
-    side.gain.value = 1; // 1 = estéreo original
     sideInverted.gain.value = -1;
 
     input.connect(stereo);
@@ -147,29 +240,13 @@
     sideLeft.connect(side);
     sideRight.connect(side);
     side.connect(sideInverted);
-    mid.connect(merger, 0, 0);
-    mid.connect(merger, 0, 1);
     side.connect(merger, 0, 0);
     sideInverted.connect(merger, 0, 1);
-
-    const send = ctx.createBiquadFilter();
-    send.type = 'highpass';
-    send.frequency.value = REVERB_FLOOR;
-    const convolver = ctx.createConvolver();
-    convolver.buffer = impulse ||= buildImpulse(ctx);
-    const wet = ctx.createGain();
-    wet.gain.value = 0;
-    const output = ctx.createGain();
-
     merger.connect(output);
-    merger.connect(send);
-    send.connect(convolver);
-    convolver.connect(wet);
-    wet.connect(output);
 
     const nodes = [input, stereo, splitter, midLeft, midRight, sideLeft, sideRight,
-      mid, side, sideInverted, merger, send, convolver, wet, output];
-    return { input, output, side, wet, disconnect: () => nodes.forEach((n) => n.disconnect()) };
+      mid, side, sideInverted, merger, output];
+    return { input, splitter, mid, side, merger, output, nodes };
   }
 
   // Reverberação gerada no próprio código: ruído que decai, suavizado para soar como sala, não como chiado.
@@ -195,13 +272,27 @@
     const set = (param, value) => (instant ? (param.value = value) : param.setTargetAtTime(value, t, SMOOTHING));
     set(chain.preamp.gain, EQ.dbToGain(s.preamp));
     chain.filters.forEach((f, i) => set(f.gain, s.gains[i]));
+
     // O tom desliza um pouco mais devagar, então a mudança soa como um deslize e não como um corte.
     const ratio = EQ.semitonesToRatio(s.pitch);
     if (instant) chain.ratio.value = ratio;
     else chain.ratio.setTargetAtTime(ratio, t, 0.04);
+
+    const [full, low, high, band, side] = SEPARATION[s.separate] || SEPARATION.off;
+    set(chain.separator.full.gain, full);
+    set(chain.separator.low.gain, low);
+    set(chain.separator.high.gain, high);
+    set(chain.separator.band.gain, band);
+    set(chain.separator.side.gain, side);
+
     const amount = s.ambience / 100;
     set(chain.ambience.side.gain, 1 + AMBIENCE_WIDTH * amount);
     set(chain.ambience.wet.gain, AMBIENCE_WET * amount);
+
+    const level = s.level / 100;
+    set(chain.leveler.ratio, 1 + 3 * level);
+    set(chain.leveler.threshold, -2 - 28 * level);
+    set(chain.levelMakeup.gain, EQ.dbToGain(8 * level));
   }
 
   const applyAll = () => captures.forEach(({ chain }) => apply(chain));
@@ -258,15 +349,15 @@
     }
   });
 
-  // O popup aberto numa aba equalizada recebe o espectro por aqui e usa o mesmo canal
-  // para o "segure para ouvir o original". Fechou o popup, o original solta sozinho.
+  // O popup aberto numa aba equalizada recebe o espectro e o quanto o limitador está segurando.
+  // O mesmo canal leva o "segure para ouvir o original": fechou o popup, o original solta sozinho.
   chrome.runtime.onConnect.addListener((port) => {
     const match = /^spectrum:(\d+)$/.exec(port.name);
     if (!match) return;
     const tabId = Number(match[1]);
     const timer = setInterval(() => {
       const capture = captures.get(tabId);
-      if (capture) port.postMessage(capture.chain.readSpectrum());
+      if (capture) port.postMessage({ s: capture.chain.readSpectrum(), r: capture.chain.limiter.reduction });
     }, 1000 / 30);
     port.onMessage.addListener((msg) => {
       if (msg?.type === 'bypass') setBypass(!!msg.on);

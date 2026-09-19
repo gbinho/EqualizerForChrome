@@ -1,6 +1,6 @@
 // Popup: liga o equalizador na aba atual, ajusta as bandas e desenha curva + espectro.
 (() => {
-  const { BANDS, LABELS, RANGE, PRESETS, SPEED } = EQ;
+  const { BANDS, LABELS, RANGE, PRESETS, SPEED, SEPARATE } = EQ;
   const PAD = 8;       // respiro vertical do gráfico (igual a --pad no CSS)
   const THUMB = 14;    // diâmetro da bolinha do slider (igual a --thumb no CSS)
   const POINTS = 240;  // resolução da curva
@@ -13,13 +13,15 @@
   const el = {
     power: $('power'), powerLabel: $('power-label'), status: $('status'), statusText: $('status-text'),
     graph: $('graph'), canvas: $('canvas'), bands: $('bands'), hint: $('hint'), scale: $('scale'),
-    preamp: $('preamp'), preampValue: $('preamp-value'),
+    preamp: $('preamp'), preampValue: $('preamp-value'), clip: $('clip'),
     presetsHead: $('presets-head'), chips: $('chips'), save: $('save'), remove: $('delete'),
     saveForm: $('save-form'), saveName: $('save-name'), saveCancel: $('save-cancel'),
     effects: $('effects'), effectsSummary: $('effects-summary'), effectsNote: $('effects-note'),
     speed: $('speed'), speedValue: $('speed-value'),
     pitch: $('pitch'), pitchValue: $('pitch-value'),
     ambience: $('ambience'), ambienceValue: $('ambience-value'),
+    level: $('level'), levelValue: $('level-value'), modes: $('modes'),
+    remember: $('remember'), rememberLabel: $('remember-label'), stopAll: $('stop-all'),
     ab: $('ab'),
   };
 
@@ -27,14 +29,18 @@
     tab: null,
     host: '',
     active: false,
+    activeTabs: [],
     busy: false,
     restricted: false,
     error: '',
     bypass: false,
     settings: EQ.sanitize(),
     custom: [],
-    speed: SPEED.normal, // por aba, porque quem muda a velocidade é o player da página
+    profiles: {},
+    profile: false,       // os ajustes deste site mandam quando ele está marcado
+    speed: SPEED.normal,  // por aba, porque quem muda a velocidade é o player da página
     speedError: '',
+    speedPlayers: null,   // quantos players a aba tinha na última tentativa
   };
 
   const bandInputs = [];
@@ -42,10 +48,11 @@
   let shown = state.settings.gains.slice(); // ganhos desenhados: seguem os reais, com transição nos presets
   let morph = 0;
   let port = null;
-  let incoming = null; // último quadro do espectro recebido
-  let spectrum = null; // quadro exibido, suavizado
+  let incoming = null;  // último quadro do espectro recebido
+  let spectrum = null;  // quadro exibido, suavizado
+  let reduction = 0;    // quanto o limitador está segurando, em dB
   let raf = 0;
-  let curve = null;    // resposta em dB, recalculada só quando os ganhos desenhados mudam
+  let curve = null;     // resposta em dB, recalculada só quando os ganhos desenhados mudam
   let saveTimer = 0;
   let speedTimer = 0;
 
@@ -69,23 +76,28 @@
     try { state.host = new URL(tab.url).hostname.replace(/^www\./, ''); } catch { state.host = ''; }
 
     const [local, session] = await Promise.all([
-      chrome.storage.local.get(['settings', 'customPresets', 'effectsOpen']),
+      chrome.storage.local.get(['settings', 'customPresets', 'effectsOpen', 'profiles']),
       chrome.storage.session.get(['activeTabs', 'speeds']),
     ]);
-    state.settings = EQ.sanitize(local.settings);
     state.custom = Array.isArray(local.customPresets) ? local.customPresets : [];
-    state.active = !!tab && (session.activeTabs || []).includes(tab.id);
+    state.profiles = local.profiles || {};
+    // Se este site tem perfil salvo, ele manda; senão valem os ajustes gerais.
+    const profile = state.host ? state.profiles[state.host] : null;
+    state.profile = !!profile;
+    state.settings = EQ.sanitize(profile || local.settings);
+    state.activeTabs = session.activeTabs || [];
+    state.active = !!tab && state.activeTabs.includes(tab.id);
     state.speed = EQ.speedOf(session.speeds?.[tab?.id]);
     el.effects.open = !!local.effectsOpen;
+    el.remember.checked = state.profile;
 
     shown = state.settings.gains.slice();
     syncBandInputs();
-    el.preamp.value = state.settings.preamp;
-    el.speed.value = state.speed;
-    el.pitch.value = state.settings.pitch;
-    el.ambience.value = state.settings.ambience;
+    syncEffectInputs();
     renderValues();
     renderChips();
+    renderModes();
+    renderFooter();
     renderHeader();
     if (state.active) connectSpectrum();
     // A página pode ter recarregado desde a última vez: devolve a velocidade escolhida.
@@ -99,6 +111,7 @@
       const input = document.createElement('input');
       Object.assign(input, { type: 'range', min: -RANGE, max: RANGE, step: 0.5, value: 0, className: 'band' });
       input.setAttribute('aria-label', `${LABELS[i]} Hz`);
+      input.title = `${LABELS[i]} Hz — duplo clique zera`;
       input.addEventListener('input', () => setGain(i, Number(input.value)));
       input.addEventListener('change', saveNow);
       input.addEventListener('dblclick', () => setGain(i, 0));
@@ -181,6 +194,23 @@
 
     bindEffects();
 
+    el.remember.addEventListener('change', () => {
+      state.profile = el.remember.checked && !!state.host;
+      if (!state.profile && state.host) delete state.profiles[state.host];
+      chrome.storage.local.set({ profiles: state.profiles });
+      saveNow();
+      renderFooter();
+    });
+
+    el.stopAll.addEventListener('click', async () => {
+      await chrome.runtime.sendMessage({ target: 'background', type: 'stopAll' }).catch(() => {});
+      state.activeTabs = [];
+      state.active = false;
+      disconnectSpectrum();
+      renderHeader();
+      renderFooter();
+    });
+
     // Segurar o botão desliga o efeito só enquanto está pressionado (comparação A/B).
     el.ab.addEventListener('pointerdown', (e) => {
       if (el.ab.disabled) return;
@@ -212,26 +242,29 @@
     el.speed.addEventListener('change', () => { applySpeed(state.speed); saveSpeed(); });
     el.speed.addEventListener('dblclick', () => setSpeed(SPEED.normal));
 
-    el.pitch.addEventListener('input', () => {
-      state.settings.pitch = Number(el.pitch.value);
-      onChange();
-    });
-    el.pitch.addEventListener('change', saveNow);
-    el.pitch.addEventListener('dblclick', () => {
-      state.settings.pitch = 0;
-      el.pitch.value = 0;
-      onChange();
-    });
+    const slider = (input, key) => {
+      input.addEventListener('input', () => {
+        state.settings[key] = Number(input.value);
+        onChange();
+      });
+      input.addEventListener('change', saveNow);
+      input.addEventListener('dblclick', () => {
+        state.settings[key] = 0;
+        input.value = 0;
+        onChange();
+      });
+    };
+    slider(el.pitch, 'pitch');
+    slider(el.ambience, 'ambience');
+    slider(el.level, 'level');
 
-    el.ambience.addEventListener('input', () => {
-      state.settings.ambience = Number(el.ambience.value);
+    el.modes.addEventListener('click', (e) => {
+      const chip = e.target.closest('.chip');
+      if (!chip) return;
+      state.settings.separate = chip.dataset.mode;
+      renderModes();
       onChange();
-    });
-    el.ambience.addEventListener('change', saveNow);
-    el.ambience.addEventListener('dblclick', () => {
-      state.settings.ambience = 0;
-      el.ambience.value = 0;
-      onChange();
+      saveNow();
     });
   }
 
@@ -247,10 +280,17 @@
       .sendMessage({ target: 'background', type: turningOn ? 'start' : 'stop', tabId: state.tab.id, settings: state.settings })
       .catch((err) => ({ ok: false, error: err?.message }));
     state.busy = false;
-    if (res?.ok) state.active = turningOn;
-    else state.error = friendlyError(res?.error);
+    if (res?.ok) {
+      state.active = turningOn;
+      state.activeTabs = turningOn
+        ? [...new Set([...state.activeTabs, state.tab.id])]
+        : state.activeTabs.filter((id) => id !== state.tab.id);
+    } else {
+      state.error = friendlyError(res?.error);
+    }
     if (!state.active) state.bypass = false;
     renderHeader();
+    renderFooter();
     if (state.active) connectSpectrum();
     else disconnectSpectrum();
   }
@@ -323,9 +363,16 @@
     if (!raf) draw();
   }
 
+  // Com "lembrar para este site" marcado, os ajustes vão para o perfil do site;
+  // sem marcar, para os ajustes gerais.
   function saveNow() {
     clearTimeout(saveTimer);
-    chrome.storage.local.set({ settings: state.settings });
+    if (state.profile && state.host) {
+      state.profiles[state.host] = state.settings;
+      chrome.storage.local.set({ profiles: state.profiles });
+    } else {
+      chrome.storage.local.set({ settings: state.settings });
+    }
   }
 
   // ---------- velocidade: quem muda é o player da página ----------
@@ -342,33 +389,53 @@
     if (!state.tab || state.restricted) return;
     clearTimeout(speedTimer);
     try {
-      await chrome.scripting.executeScript({
-        target: { tabId: state.tab.id, allFrames: true },
-        args: [rate],
-        func: (value) => {
-          window.__eqSpeed = value;
-          const apply = () => {
-            for (const media of document.querySelectorAll('video, audio')) {
-              media.preservesPitch = true; // velocidade sem deixar a voz fina; o tom tem controle próprio
-              if (media.playbackRate !== window.__eqSpeed) media.playbackRate = window.__eqSpeed;
-            }
-          };
-          apply();
-          if (!window.__eqSpeedWatch) {
-            window.__eqSpeedWatch = true;
-            // Faixa nova ou player recriado voltam na velocidade escolhida.
-            let pending = 0;
-            const soon = () => { clearTimeout(pending); pending = setTimeout(apply, 250); };
-            document.addEventListener('play', apply, true);
-            new MutationObserver(soon).observe(document.documentElement, { childList: true, subtree: true });
-          }
-        },
-      });
+      // Alguns sites têm o player dentro de um quadro; se o Chrome recusar os quadros, tenta só o principal.
+      const results = await injectSpeed(rate, true).catch(() => injectSpeed(rate, false));
+      state.speedPlayers = results.reduce((sum, r) => sum + (Number(r?.result) || 0), 0);
       state.speedError = '';
     } catch {
+      state.speedPlayers = 0;
       state.speedError = 'A velocidade não funciona nesta página';
     }
     renderEffects();
+  }
+
+  function injectSpeed(rate, allFrames) {
+    return chrome.scripting.executeScript({
+      target: { tabId: state.tab.id, allFrames },
+      world: 'MAIN', // preciso enxergar os players que a página cria por JavaScript
+      args: [rate],
+      func: (value) => {
+        window.__eqSpeed = value;
+        const known = (window.__eqMedia ||= new Set());
+        const set = (media) => {
+          try {
+            media.preservesPitch = true; // velocidade sem deixar a voz fina; o tom tem controle próprio
+            if (media.playbackRate !== window.__eqSpeed) media.playbackRate = window.__eqSpeed;
+          } catch { /* player que não aceita: ignora */ }
+        };
+        const applyAll = () => {
+          for (const media of document.querySelectorAll('video, audio')) known.add(media);
+          known.forEach(set);
+          return known.size;
+        };
+        if (!window.__eqSpeedHook) {
+          window.__eqSpeedHook = true;
+          // O SoundCloud cria o player por JavaScript, fora da página: só o play() entrega ele.
+          const play = HTMLMediaElement.prototype.play;
+          HTMLMediaElement.prototype.play = function (...args) {
+            known.add(this);
+            set(this);
+            return play.apply(this, args);
+          };
+          document.addEventListener('play', (e) => { known.add(e.target); set(e.target); }, true);
+          let pending = 0;
+          new MutationObserver(() => { clearTimeout(pending); pending = setTimeout(applyAll, 250); })
+            .observe(document.documentElement, { childList: true, subtree: true });
+        }
+        return applyAll();
+      },
+    });
   }
 
   async function saveSpeed() {
@@ -417,7 +484,9 @@
     if (port || !state.tab) return;
     port = chrome.runtime.connect({ name: `spectrum:${state.tab.id}` });
     port.onMessage.addListener((frame) => {
-      if (Array.isArray(frame)) incoming = frame;
+      if (!frame) return;
+      if (Array.isArray(frame.s)) incoming = frame.s;
+      reduction = Number(frame.r) || 0;
     });
     port.onDisconnect.addListener(() => {
       void chrome.runtime.lastError;
@@ -437,6 +506,8 @@
     cancelAnimationFrame(raf);
     raf = 0;
     incoming = spectrum = null;
+    reduction = 0;
+    el.clip.hidden = true;
     el.ab.classList.remove('held');
     draw();
   }
@@ -449,6 +520,8 @@
         spectrum[k] += (target - spectrum[k]) * (target > spectrum[k] ? 0.55 : 0.2);
       }
     }
+    // O limitador segurando é sinal de que a pré-amplificação está alta demais.
+    el.clip.hidden = reduction > -0.5;
     draw();
     raf = requestAnimationFrame(loop);
   }
@@ -562,6 +635,7 @@
       ? 'O Chrome não deixa mexer no som das páginas internas'
       : 'Ligue para ouvir o efeito nesta aba';
     el.ab.disabled = !active;
+    if (!active) el.clip.hidden = true;
     renderEffects();
     draw();
   }
@@ -576,25 +650,30 @@
   }
 
   function renderEffects() {
-    const { pitch, ambience } = state.settings;
+    const { pitch, ambience, level, separate } = state.settings;
     el.speedValue.textContent = EQ.formatSpeed(state.speed);
     el.pitchValue.textContent = `${EQ.formatDb(pitch)} st`;
     el.ambienceValue.textContent = `${ambience}%`;
+    el.levelValue.textContent = `${level}%`;
     el.speed.disabled = state.restricted || !state.tab;
 
     // O resumo aparece recolhido, então dá para ver o que está ligado sem abrir.
     const parts = [];
     if (state.speed !== SPEED.normal) parts.push(EQ.formatSpeed(state.speed));
     if (pitch !== 0) parts.push(`${EQ.formatDb(pitch)} st`);
-    if (ambience > 0) parts.push(`${ambience}%`);
+    if (ambience > 0) parts.push(`amb. ${ambience}%`);
+    if (level > 0) parts.push(`niv. ${level}%`);
+    if (separate !== 'off') parts.push(SEPARATE.find((m) => m.id === separate).name.toLocaleLowerCase('pt-BR'));
     el.effectsSummary.textContent = parts.join(' · ');
 
-    const needsPower = !state.active && (pitch !== 0 || ambience > 0);
+    const noPlayer = state.speed !== SPEED.normal && state.speedPlayers === 0 && !state.speedError;
+    const needsPower = !state.active && (pitch !== 0 || ambience > 0 || level > 0 || separate !== 'off');
     el.effectsNote.textContent = state.speedError
+      || (noPlayer ? 'Nenhum player encontrado: dê play na página antes de mudar a velocidade' : '')
       || (needsPower
-        ? 'Tom e ambiência só valem com o equalizador ligado'
-        : 'Velocidade muda o player da página. Tom e ambiência mudam o som capturado.');
-    el.effectsNote.classList.toggle('warn', !!state.speedError);
+        ? 'Tom, ambiência, nivelar e isolar só valem com o equalizador ligado'
+        : 'A velocidade muda o player da página. Os outros mudam o som capturado.');
+    el.effectsNote.classList.toggle('warn', !!state.speedError || noPlayer);
   }
 
   // Os presets do usuário vêm primeiro; depois os prontos, já na ordem "mais graves primeiro".
@@ -623,8 +702,36 @@
     el.remove.hidden = !customName(preset);
   }
 
+  function renderModes() {
+    el.modes.replaceChildren(...SEPARATE.map((mode) => {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'chip';
+      chip.dataset.mode = mode.id;
+      chip.textContent = mode.name;
+      chip.setAttribute('aria-pressed', String(mode.id === state.settings.separate));
+      return chip;
+    }));
+  }
+
+  function renderFooter() {
+    el.rememberLabel.textContent = state.host ? `Lembrar para ${state.host}` : 'Lembrar para este site';
+    el.remember.disabled = !state.host;
+    const others = state.activeTabs.filter((id) => id !== state.tab?.id).length;
+    el.stopAll.hidden = others === 0;
+    el.stopAll.textContent = `Desligar todas (${state.activeTabs.length})`;
+  }
+
   function syncBandInputs() {
     shown.forEach((g, i) => { bandInputs[i].value = g; });
+  }
+
+  function syncEffectInputs() {
+    el.preamp.value = state.settings.preamp;
+    el.speed.value = state.speed;
+    el.pitch.value = state.settings.pitch;
+    el.ambience.value = state.settings.ambience;
+    el.level.value = state.settings.level;
   }
 
   // ---------- utilidades ----------
