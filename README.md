@@ -1,6 +1,6 @@
 # Equalizador de Som
 
-Equalizador de 10 bandas para o Chrome, com velocidade, tom, ambiência 3D, nivelamento de volume e isolamento de voz. Funciona no SoundCloud, no YouTube e em qualquer aba que esteja tocando som.
+Equalizador de 16 bandas (20 Hz a 20 kHz, ±18 dB) para o Chrome, com velocidade, tom, ambiência 3D, nivelamento de volume e isolamento de voz. Funciona no SoundCloud, no YouTube e em qualquer aba que esteja tocando som.
 
 É de código aberto e pequeno o bastante para qualquer pessoa ler, e não esconde nada: não se conecta à internet, não coleta dados e não fica rodando nas páginas que você visita.
 
@@ -88,12 +88,12 @@ Com **Manter o tom**, velocidade e tom ficam independentes. Com **Sem distorçã
 
 ```
 aba (SoundCloud, YouTube…) ──tabCapture──▶ página invisível da extensão
-   pré-amp ▶ 10 filtros ▶ tom ▶ isolar ▶ ambiência ▶ nivelador ▶ limitador ▶ alto-falante
+   pré-amp ▶ 16 filtros ▶ tom ▶ isolar ▶ ambiência ▶ nivelador ▶ limitador ▶ alto-falante
                                                               └▶ analisador ▶ espectro no popup
 ```
 
 - O som da aba passa pela [Web Audio API](https://developer.mozilla.org/pt-BR/docs/Web/API/Web_Audio_API) numa página invisível (`offscreen.html`) e volta para o alto-falante já processado.
-- Cada banda é um filtro `peaking` de uma oitava. No fim da cadeia, um limitador evita distorção quando você sobe muito os graves.
+- As bandas são a série ISO de 2/3 de oitava (20, 31, 50, 80, 125, 200, 315, 500, 800, 1,2k, 2k, 3,1k, 5k, 8k, 12k e 20k), cada uma um filtro `peaking` com Q de 2,1. No fim da cadeia, um limitador evita distorção quando você sobe muito os graves.
 - O tom é deslocado por um `AudioWorklet` próprio (`pitch-processor.js`): duas leituras da mesma linha de atraso, com crossfade entre elas.
 - Isolar e ambiência trabalham em mid/side: o centro da mixagem é separado das laterais. Isolar mexe no centro por faixa de frequência; a ambiência abre as laterais e soma uma reverberação gerada no próprio código, que entra só acima de 250 Hz.
 - A velocidade é a única coisa que acontece fora da extensão: um comando ajusta o `playbackRate` do player da aba.
@@ -103,7 +103,8 @@ aba (SoundCloud, YouTube…) ──tabCapture──▶ página invisível da ext
 
 - Enquanto uma aba está equalizada, o Chrome mostra nela um indicador de captura de áudio. É o jeito que ele avisa que uma extensão está processando o som.
 - Páginas internas (`chrome://`, Chrome Web Store) não podem ser equalizadas.
-- Se distorcer mesmo com o limitador, baixe a **Pré-amplificação**.
+- Com ±18 dB por banda dá para exagerar bastante. Bandas vizinhas se somam, então subir várias juntas rende mais do que o número de cada uma sugere: se distorcer, baixe a **Pré-amplificação**.
+- Quem já usava a versão de 10 bandas não perde nada: os ajustes e os presets salvos são convertidos para as 16 bandas mantendo o desenho da curva.
 - Com o tom deslocado, o som fica alguns milissegundos atrás da imagem do vídeo. Em música não se nota.
 - O perfil de um site é recarregado quando você abre o popup naquele site. Com duas abas de sites diferentes equalizando ao mesmo tempo, vale o último ajuste feito.
 - Recarregar a extensão em `chrome://extensions` desliga o equalizador em todas as abas. É só ligar de novo.

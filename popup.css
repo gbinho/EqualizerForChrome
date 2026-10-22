@@ -22,7 +22,7 @@
 
 html, body { margin: 0; background: var(--bg); color: var(--text); }
 body {
-  width: 380px;
+  width: 460px; /* 16 bandas precisam de respiro; o maximo do Chrome e 800px */
   font: 13px/1.4 "Segoe UI", system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
@@ -59,7 +59,7 @@ body.is-active .dot { background: var(--accent); box-shadow: 0 0 0 3px rgba(255,
 .eq { padding: 0 16px; }
 .graph { position: relative; height: 180px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line); overflow: hidden; }
 #canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
-.bands { position: absolute; inset: var(--pad) 0; display: grid; grid-template-columns: repeat(10, 1fr); z-index: 1; }
+.bands { position: absolute; inset: var(--pad) 0; display: grid; grid-template-columns: repeat(16, 1fr); z-index: 1; }
 
 .band {
   -webkit-appearance: none; appearance: none;
@@ -87,9 +87,9 @@ body.is-active .band::-webkit-slider-thumb { background: var(--accent); }
   color: var(--muted); font-size: 11.5px; white-space: nowrap; pointer-events: none;
 }
 
-.scale { display: grid; grid-template-columns: repeat(10, 1fr); padding-top: 7px; text-align: center; font-variant-numeric: tabular-nums; }
-.scale .freq { display: block; font-size: 10.5px; color: var(--muted); }
-.scale .val { display: block; margin-top: 1px; font-size: 11px; color: var(--faint); }
+.scale { display: grid; grid-template-columns: repeat(16, 1fr); padding-top: 7px; text-align: center; font-variant-numeric: tabular-nums; }
+.scale .freq { display: block; font-size: 9.5px; letter-spacing: -.02em; color: var(--muted); }
+.scale .val { display: block; margin-top: 1px; font-size: 10px; letter-spacing: -.02em; color: var(--faint); }
 .scale .val.on { color: var(--text); }
 
 /* Controles */

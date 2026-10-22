@@ -16,7 +16,7 @@ Durante uma sessão eles **mexem o tempo todo**. Abrem o popup várias vezes e t
 
 ## Product Purpose
 
-Equalizador de 10 bandas para qualquer aba do Chrome. Dá para mudar o som do que está tocando em segundos, sem sair da página. O sucesso é abrir o popup, dar mais peso aos graves (ou trocar de preset) e voltar à música quase sem interrupção, com o som melhor e sem distorcer.
+Equalizador de 16 bandas para qualquer aba do Chrome. Dá para mudar o som do que está tocando em segundos, sem sair da página. O sucesso é abrir o popup, dar mais peso aos graves (ou trocar de preset) e voltar à música quase sem interrupção, com o som melhor e sem distorcer.
 
 ## Positioning
 
@@ -30,7 +30,7 @@ Funciona em qualquer site porque processa o áudio da aba inteira (`chrome.tabCa
 
 ## Capabilities and Constraints
 
-- 10 bandas em oitavas (31 Hz a 16 kHz), ±12 dB em passos de 0,5 dB, com pré-amplificação de ±12 dB.
+- 16 bandas na série ISO de 2/3 de oitava (20 Hz a 20 kHz), ±18 dB em passos de 0,5 dB, com pré-amplificação de ±18 dB. Curvas de preset e ajustes salvos nas 10 bandas antigas são convertidos por interpolação no eixo logarítmico.
 - 12 predefinições prontas, presets pessoais salvos, "segure para ouvir o original" para comparação A/B e espectro ao vivo.
 - Efeitos: velocidade de 0,5× a 2× (muda o `playbackRate` do player da página, via `scripting` + `activeTab` no mundo da página, e vale por aba), tom de −12 a +12 semitons (AudioWorklet próprio), ambiência 3D (mid/side + reverberação gerada no código), nivelar volume (compressor) e isolar voz/beat (cancelamento do centro por faixa de frequência).
 - Um limitador no fim da cadeia evita distorção quando os graves sobem.
@@ -39,7 +39,7 @@ Funciona em qualquer site porque processa o áudio da aba inteira (`chrome.tabCa
 - Manifest V3, Chrome 124+, HTML/CSS/JS puro sem etapa de build. Velocidade e tom são independentes entre si.
 - Enquanto uma aba está equalizada, o Chrome mostra o próprio aviso de captura de áudio. A extensão não controla isso.
 - Páginas internas (`chrome://`, Chrome Web Store) não podem ser equalizadas.
-- O popup tem largura fixa de 380px.
+- O popup tem largura fixa de 460px (as 16 colunas não cabem em 380).
 - Interface só em português do Brasil hoje.
 - **Em aberto:** publicar na Chrome Web Store (ainda não; a distribuição é por pasta) e uma versão em outros idiomas.
 

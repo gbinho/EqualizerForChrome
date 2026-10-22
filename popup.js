@@ -113,6 +113,8 @@
   // ---------- montagem ----------
 
   function buildBands() {
+    // A grade acompanha a lista de bandas do eq.js, sem numero fixo no CSS.
+    el.bands.style.gridTemplateColumns = `repeat(${BANDS.length}, 1fr)`;
     BANDS.forEach((_, i) => {
       const input = document.createElement('input');
       Object.assign(input, { type: 'range', min: -RANGE, max: RANGE, step: 0.5, value: 0, className: 'band' });
@@ -131,6 +133,7 @@
   }
 
   function buildScale() {
+    el.scale.style.gridTemplateColumns = `repeat(${LABELS.length}, 1fr)`;
     LABELS.forEach((label) => {
       const cell = document.createElement('div');
       const freq = document.createElement('span');
